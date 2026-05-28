@@ -15,7 +15,7 @@
 
 O projeto consiste no desenvolvimento de um **Monitor de Sinais Vitais Embarcado**. O dispositivo tem a finalidade de realizar a leitura contínua dos batimentos cardíacos (BPM) e da oxigenação do sangue (SpO2) de um usuário através do sensor óptico MAX30102. Os dados processados são disponibilizados remotamente via Bluetooth, permitindo o acompanhamento em tempo real através de um terminal ou script de monitoramento no computador. 
 
-A solução será inteiramente desenvolvida utilizando o microcontrolador ESP32 com o SDK do fabricante (ESP-IDF).
+A solução será inteiramente desenvolvida utilizando o microcontrolador ESP32 DevKit1 com o SDK do fabricante (ESP-IDF).
 
 ## 2. Requisitos do Projeto
 Para o correto funcionamento e atendimento aos critérios estabelecidos, o projeto cumprirá os seguintes requisitos:
