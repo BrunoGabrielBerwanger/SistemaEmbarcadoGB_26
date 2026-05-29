@@ -6,5 +6,8 @@
     "--background-index",
     "--query-driver=**",
     "--compile-commands-dir=c:\\GitHub\\SistemaEmbarcadoGB_26\\RemoteHeartDevice\\build"
-  ]
+  ],
+  "idf.currentSetup": "C:\\esp\\v6.0.1\\esp-idf",
+  "idf.portWin": "COM6",
+  "idf.flashType": "UART"
 }
