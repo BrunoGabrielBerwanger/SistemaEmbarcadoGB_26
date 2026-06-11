@@ -88,11 +88,19 @@ static void esp_spp_cb(esp_spp_cb_event_t event, esp_spp_cb_param_t *param)
         g_spp_connected = false;
         g_spp_handle = 0;
         break;
-    case ESP_SPP_START_EVT:
+    case ESP_SPP_START_EVT: {
         ESP_LOGI(TAG, "ESP_SPP_START_EVT: SPP server started");
-        esp_bt_gap_set_device_name("RemoteHeartDevice");
+        esp_bt_gap_set_device_name("CardioMonitor_GB");
         esp_bt_gap_set_scan_mode(ESP_BT_CONNECTABLE, ESP_BT_GENERAL_DISCOVERABLE);
+        
+        // Set Class of Device (CoD) to Health (0x09) to help PCs identify the device type
+        esp_bt_cod_t cod;
+        cod.major = 0x09;      // Major class: Health (0x09)
+        cod.minor = 0x00;      // Minor class: Generic
+        cod.service = 0x00;    // Generic service
+        esp_bt_gap_set_cod(cod, ESP_BT_SET_COD_ALL);
         break;
+    }
     case ESP_SPP_CL_INIT_EVT:
         ESP_LOGI(TAG, "ESP_SPP_CL_INIT_EVT");
         break;
@@ -176,11 +184,11 @@ esp_err_t bluetooth_spp_init(void)
 
     /*
      * Set default parameters for Legacy Pairing
-     * Use PIN Code Connection if SSP is not supported or used
+     * Use a fixed PIN Code "1234" to avoid issues with uninitialized variables
      */
-    esp_bt_pin_type_t pin_type = ESP_BT_PIN_TYPE_VARIABLE;
-    esp_bt_pin_code_t pin_code;
-    esp_bt_gap_set_pin(pin_type, 0, pin_code);
+    esp_bt_pin_type_t pin_type = ESP_BT_PIN_TYPE_FIXED;
+    esp_bt_pin_code_t pin_code = {'1', '2', '3', '4'};
+    esp_bt_gap_set_pin(pin_type, 4, pin_code);
 
     return ESP_OK;
 }
