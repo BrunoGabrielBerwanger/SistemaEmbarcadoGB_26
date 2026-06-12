@@ -1,5 +1,6 @@
 #include "dsp.h"
 #include <string.h>
+#include <math.h>
 
 // Circular buffer for raw sensor samples
 static uint32_t red_buffer[SAMPLE_WINDOW] = {0};
@@ -65,19 +66,68 @@ static void add_to_history(uint8_t bpm, uint8_t spo2, uint8_t *avg_bpm, uint8_t 
         return;
     }
 
-    uint32_t sum_bpm = 0;
+    // Calculate simple rolling average for SpO2
     uint32_t sum_spo2 = 0;
     for (int i = 0; i < history_count; i++) {
-        sum_bpm += bpm_history[i];
         sum_spo2 += spo2_history[i];
     }
-    *avg_bpm = (uint8_t)(sum_bpm / history_count);
     *avg_spo2 = (uint8_t)(sum_spo2 / history_count);
+
+    // Apply Chauvenet's criterion for BPM if we have reached HISTORY_SIZE (30) samples.
+    // Otherwise, compute simple average.
+    if (history_count < HISTORY_SIZE) {
+        uint32_t sum_bpm = 0;
+        for (int i = 0; i < history_count; i++) {
+            sum_bpm += bpm_history[i];
+        }
+        *avg_bpm = (uint8_t)(sum_bpm / history_count);
+    } else {
+        // 1. Calculate Mean (mu)
+        double sum_bpm = 0.0;
+        for (int i = 0; i < HISTORY_SIZE; i++) {
+            sum_bpm += bpm_history[i];
+        }
+        double mu = sum_bpm / HISTORY_SIZE;
+
+        // 2. Calculate Standard Deviation (sigma)
+        double sum_sq_diff = 0.0;
+        for (int i = 0; i < HISTORY_SIZE; i++) {
+            double diff = (double)bpm_history[i] - mu;
+            sum_sq_diff += diff * diff;
+        }
+        // Sample standard deviation (N-1)
+        double sigma = sqrt(sum_sq_diff / (HISTORY_SIZE - 1));
+
+        // 3. Filter outliers using Chauvenet's critical value for N = 30 (Z_crit = 2.39)
+        double sum_filtered_bpm = 0.0;
+        int valid_count = 0;
+        const double z_critical = 2.39;
+
+        for (int i = 0; i < HISTORY_SIZE; i++) {
+            double bpm_val = (double)bpm_history[i];
+            double z_score = 0.0;
+            if (sigma > 0.0001) {
+                z_score = fabs(bpm_val - mu) / sigma;
+            }
+            // If the z_score is less than or equal to z_critical, it is not an outlier
+            if (z_score <= z_critical) {
+                sum_filtered_bpm += bpm_val;
+                valid_count++;
+            }
+        }
+
+        // 4. Calculate final average
+        if (valid_count > 0) {
+            *avg_bpm = (uint8_t)(sum_filtered_bpm / valid_count + 0.5); // Round to nearest integer
+        } else {
+            *avg_bpm = (uint8_t)(mu + 0.5); // Fallback to simple mean if all rejected
+        }
+    }
 }
 
 static void compute_sensor_metrics(const uint32_t *red, const uint32_t *ir, size_t count, uint8_t *bpm, uint8_t *spo2)
 {
-    // 1. Calculate Average DC of the window to check finger presence and remove DC
+    // Calculate Average DC of the window to check finger presence and remove DC
     uint64_t sum_red = 0;
     uint64_t sum_ir = 0;
     for (size_t i = 0; i < count; i++) {
@@ -94,7 +144,7 @@ static void compute_sensor_metrics(const uint32_t *red, const uint32_t *ir, size
         return;
     }
 
-    // 2. Remove DC Component (DC filter) to obtain the AC component.
+    // Remove DC Component (DC filter) to obtain the AC component.
     static int32_t ac_red[SAMPLE_WINDOW];
     static int32_t ac_ir[SAMPLE_WINDOW];
     
@@ -103,7 +153,7 @@ static void compute_sensor_metrics(const uint32_t *red, const uint32_t *ir, size
         ac_ir[i] = (int32_t)ir[i] - (int32_t)avg_ir;
     }
 
-    // 3. Smooth the AC signals using a 5-point moving average filter to reduce high frequency noise
+    // Smooth the AC signals using a 5-point moving average filter to reduce high frequency noise
     static int32_t filtered_red[SAMPLE_WINDOW];
     static int32_t filtered_ir[SAMPLE_WINDOW];
     for (size_t i = 0; i < count; i++) {
@@ -122,7 +172,7 @@ static void compute_sensor_metrics(const uint32_t *red, const uint32_t *ir, size
         filtered_ir[i] = sum_filt_ir / divisor;
     }
 
-    // 4. Peak Detection on the filtered IR signal
+    // Peak Detection on the filtered IR signal
     int32_t max_ac_ir = 0;
     for (size_t i = 0; i < count; i++) {
         int32_t val = filtered_ir[i] < 0 ? -filtered_ir[i] : filtered_ir[i];
@@ -155,7 +205,7 @@ static void compute_sensor_metrics(const uint32_t *red, const uint32_t *ir, size
         }
     }
 
-    // 5. Calculate BPM based on average interval between peaks
+    // Calculate BPM based on average interval between peaks
     if (peak_cnt >= 2) {
         uint32_t total_interval = 0;
         for (int i = 1; i < peak_cnt; i++) {
@@ -175,7 +225,7 @@ static void compute_sensor_metrics(const uint32_t *red, const uint32_t *ir, size
         *bpm = 0;
     }
 
-    // 6. Calculate SpO2
+    // Calculate SpO2
     // Estimate peak-to-peak amplitude (max - min) of the filtered AC component
     int32_t max_red_ac = -999999, min_red_ac = 999999;
     int32_t max_ir_ac = -999999, min_ir_ac = 999999;

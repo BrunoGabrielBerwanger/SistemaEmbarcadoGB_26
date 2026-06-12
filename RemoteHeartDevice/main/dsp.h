@@ -6,7 +6,7 @@
 #include <stddef.h>
 
 #define SAMPLE_WINDOW               300
-#define HISTORY_SIZE                10
+#define HISTORY_SIZE                30
 
 /**
  * @brief Push a new raw sample (Red and IR) into the internal DSP buffers.

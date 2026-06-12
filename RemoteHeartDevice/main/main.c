@@ -126,6 +126,14 @@ static void esp_spp_cb(esp_spp_cb_event_t event, esp_spp_cb_param_t *param)
     }
 }
 
+/*
+    Function to initialize the Bluetooth Serial Port Profile.
+    Function calls required functions to set up the Bluetooth 
+    controller, Bluedroid stack, and SPP profile.
+
+    @Input: void
+    @Output: esp_err_t - ESP_OK on success, error code on failure
+*/
 esp_err_t bluetooth_spp_init(void)
 {
     esp_err_t ret;
@@ -193,16 +201,21 @@ esp_err_t bluetooth_spp_init(void)
     return ESP_OK;
 }
 
-void vTaskSensorAquisition(void *pvParameters)
+/*
+    Thread dedicate to MAX30102 sensor.
+    This task is responsible to aquire the sensor data,
+    calculate metrics and store the data.
+*/
+void TaskSensorAquisition(void *pvParameters)
 {
     int new_samples_count = 0;
     static uint32_t temp_red[32];
     static uint32_t temp_ir[32];
 
-    ESP_LOGI(TAG, "Task Aquisition started on Core %d", xPortGetCoreID());
+    ESP_LOGI(TAG, "Task Aquisition started!");
 
     while (true) {
-        // Read any available samples in the sensor's hardware FIFO
+        // Read any available samples in the sensor's FIFO
         int read_count = max30102_read_fifo(temp_red, temp_ir, 32);
         
         if (read_count > 0) {
@@ -251,9 +264,14 @@ void vTaskSensorAquisition(void *pvParameters)
     }
 }
 
-void vTaskBluetoothTx(void *pvParameters)
+/*
+    Thread dedicate to bluetooth communication.
+    This task is responsible to send the pre-aquired
+    data using bluetooth connection.
+*/
+void TaskBluetoothTx(void *pvParameters)
 {
-    ESP_LOGI(TAG, "Task Bluetooth Tx started on Core %d", xPortGetCoreID());
+    ESP_LOGI(TAG, "Task Bluetooth Tx started!");
     char tx_buffer[256];
 
     while (true) {
@@ -313,22 +331,23 @@ void app_main(void)
 {
     esp_err_t err;
 
-    // 1. Initialize NVS (required for Bluetooth bonding and keys)
+    // Initialize non volatile storage - NVS (required for Bluetooth bonding and keys)
     err = nvs_flash_init();
+    // Verify if NVS initialization failed due to no free pages or new version
     if (err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND) {
         ESP_ERROR_CHECK(nvs_flash_erase());
         err = nvs_flash_init();
     }
     ESP_ERROR_CHECK(err);
 
-    // 2. Create Mutex for shared region protection
+    // Create Mutex for shared region protection
     g_sensor_mutex = xSemaphoreCreateMutex();
     if (g_sensor_mutex == NULL) {
         ESP_LOGE(TAG, "Failed to create shared memory Mutex");
         return;
     }
 
-    // 3. Initialize the MAX30102 sensor and underlying I2C master driver
+    // Initialize the MAX30102 sensor and I2C driver
     err = max30102_init();
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "MAX30102 initialization failed: %s", esp_err_to_name(err));
@@ -336,7 +355,7 @@ void app_main(void)
     }
     ESP_LOGI(TAG, "MAX30102 initialization complete");
 
-    // 4. Initialize Bluetooth Classic SPP stack
+    // Initialize Bluetooth Serial Port Profile (SPP) stack
     err = bluetooth_spp_init();
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Bluetooth SPP initialization failed: %s", esp_err_to_name(err));
@@ -344,28 +363,12 @@ void app_main(void)
     }
     ESP_LOGI(TAG, "Bluetooth SPP initialization complete");
 
-    // 5. Spawn concurrent FreeRTOS Tasks
+    // Create tasks
     // Task A: Sensor Aquisition pinned to Core 0 (dedicated to fast I2C polling)
-    xTaskCreatePinnedToCore(
-        vTaskSensorAquisition,
-        "vTaskSensorAquisition",
-        4096,
-        NULL,
-        5,
-        NULL,
-        0
-    );
+    xTaskCreate(TaskSensorAquisition, "TaskSensorAquisition", 4096, NULL, 5, NULL);
 
     // Task B: Bluetooth Transmission pinned to Core 1 (handles BT overhead and formatting)
-    xTaskCreatePinnedToCore(
-        vTaskBluetoothTx,
-        "vTaskBluetoothTx",
-        4096,
-        NULL,
-        5,
-        NULL,
-        1
-    );
+    xTaskCreate(TaskBluetoothTx, "TaskBluetoothTx", 4096, NULL, 5, NULL);
 
     ESP_LOGI(TAG, "System initialization complete. Concurrent tasks spawned.");
 }
